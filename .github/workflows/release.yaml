@@ -1,0 +1,73 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  ci:
+    uses: NUS-MTech-Capstone/github-actions-shared/.github/workflows/go-ci.yaml@main
+    with:
+      go-version: "1.26.3"
+
+  release:
+    name: Build Release Assets
+    runs-on: ubuntu-latest
+    needs: ci
+    strategy:
+      matrix:
+        include:
+          - goarch: amd64
+            asset_arch: amd64
+          - goarch: arm64
+            asset_arch: arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.3"
+          cache: true
+          cache-dependency-path: go.mod
+
+      - name: Build Linux binary
+        env:
+          CGO_ENABLED: "0"
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          mkdir -p "dist/linux-${GOARCH}"
+          go build -trimpath -ldflags="-s -w" -o "dist/linux-${GOARCH}/ddm-agent" ./cmd/server
+
+      - name: Package asset
+        run: |
+          tar -C "dist/linux-${{ matrix.goarch }}" -czf "dist/ddm-agent-linux-${{ matrix.asset_arch }}.tar.gz" ddm-agent
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ddm-agent-linux-${{ matrix.asset_arch }}
+          path: dist/ddm-agent-linux-${{ matrix.asset_arch }}.tar.gz
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs: release
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/ddm-agent-linux-*.tar.gz
+          generate_release_notes: true
