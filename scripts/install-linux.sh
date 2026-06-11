@@ -7,6 +7,8 @@ SERVICE_NAME="${DDM_AGENT_SERVICE_NAME:-ddm-agent}"
 INSTALL_DIR="${DDM_AGENT_INSTALL_DIR:-/usr/local/bin}"
 CONFIG_DIR="${DDM_AGENT_CONFIG_DIR:-/etc/ddm-agent}"
 PORT="${DDM_AGENT_PORT:-8084}"
+STS_URL="${DDM_AGENT_STS_URL:-http://localhost:8082}"
+HOST_ID="${DDM_AGENT_HOST_ID:-}"
 
 if [ "$(uname -s)" != "Linux" ]; then
   echo "This installer only supports Linux." >&2
@@ -118,6 +120,8 @@ if [ ! -f "${CONFIG_DIR}/ddm-agent.env" ]; then
   tmp_env="${TMP_DIR}/ddm-agent.env"
   cat > "$tmp_env" <<EOF
 PORT=${PORT}
+STS_URL=${STS_URL}
+DDM_AGENT_HOST_ID=${HOST_ID}
 EOF
   $SUDO install -m 0644 "$tmp_env" "${CONFIG_DIR}/ddm-agent.env"
 fi
@@ -138,9 +142,16 @@ ExecStart=${INSTALL_DIR}/ddm-agent
 Restart=on-failure
 RestartSec=5s
 NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
 PrivateTmp=true
+PrivateDevices=true
 ProtectSystem=full
 ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
 
 [Install]
 WantedBy=multi-user.target

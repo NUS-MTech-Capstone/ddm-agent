@@ -1,15 +1,41 @@
-# ddm-agent
 # DDM Agent
 
-Thin MVP target-side service. For now it exposes health and a mock command
-execution endpoint so the dataplane can later swap echo mode for agent-backed
-execution.
+Target-side service for the DenDenMushi MVP. It accepts command requests only
+from callers holding a short-lived STS session token, validates the token with
+STS, and executes the command as the operating-system user running the agent.
+
+The current protocol is line-oriented command execution, not a persistent PTY.
+Shell state such as `cd` and environment changes is not preserved between
+requests.
 
 ## Run
 
 ```bash
-PORT=8084 go run ./cmd/server
+PORT=8084 \
+STS_URL=http://localhost:8082 \
+DDM_AGENT_HOST_ID=host-123 \
+COMMAND_TIMEOUT=30s \
+go run ./cmd/server
 ```
+
+`DDM_AGENT_HOST_ID` is optional for local development. Set it in deployed
+environments so an agent rejects requests targeting a different inventory host.
+
+## Configuration
+
+```text
+PORT=8084
+STS_URL=http://localhost:8082
+STS_TIMEOUT=5s
+COMMAND_TIMEOUT=30s
+SHELL_PATH=/bin/sh
+DDM_AGENT_HOST_ID=
+MAX_COMMAND_BYTES=16384
+MAX_OUTPUT_BYTES=1048576
+```
+
+`MAX_OUTPUT_BYTES` applies separately to stdout and stderr. Truncated output is
+marked in the response.
 
 ## Linux Install
 
@@ -24,6 +50,8 @@ Optional overrides:
 ```bash
 DDM_AGENT_VERSION=v0.1.0 \
 DDM_AGENT_PORT=8084 \
+DDM_AGENT_STS_URL=https://sts.internal.example.com \
+DDM_AGENT_HOST_ID=host-123 \
 sudo -E sh scripts/install-linux.sh
 ```
 
@@ -41,9 +69,51 @@ Then it runs:
 systemctl enable --now ddm-agent.service
 ```
 
+The installer creates a dedicated `ddm-agent` system user. Commands run as that
+user, with Linux capabilities removed and `NoNewPrivileges=true`.
+
 ## Endpoints
 
 ```http
 GET  /healthz
 POST /execute
 ```
+
+Example authenticated request:
+
+```http
+POST /execute
+Authorization: Bearer <short-lived-session-token>
+Content-Type: application/json
+X-DDM-Session-ID: sess-123
+X-DDM-User-ID: user-123
+X-DDM-Host-ID: host-123
+X-DDM-CR-ID: cr-123
+
+{"command":"whoami"}
+```
+
+The agent calls STS `POST /tokens/validate` with the session ID, user ID,
+required `owner` mode, and bearer token before execution. Observer tokens cannot
+run commands. Tokens and command contents are not logged.
+
+Successful command execution, including a nonzero shell exit, returns:
+
+```json
+{
+  "stdout": "",
+  "stderr": "example error\n",
+  "exitCode": 1
+}
+```
+
+## Privileges
+
+Do not run the agent as root by default. A remote command execution service
+running as root turns any authentication or command-handling defect into full
+host compromise.
+
+Run it as a dedicated least-privileged account. If a small set of administrative
+operations is required, expose tightly scoped root-owned helper programs or
+specific `sudoers` entries rather than granting the whole agent unrestricted
+root access.
