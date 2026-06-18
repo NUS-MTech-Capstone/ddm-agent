@@ -3,12 +3,13 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 
 	"github.com/NUS-MTech-Capstone/ddm-agent/internal/execution"
 	"github.com/NUS-MTech-Capstone/ddm-agent/internal/model"
+	"github.com/NUS-MTech-Capstone/ddm-agent/internal/observability"
 	"github.com/NUS-MTech-Capstone/ddm-agent/internal/service"
 )
 
@@ -36,8 +37,7 @@ func New(svc *service.Service, maxCommandBytes int) *Server {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log.Printf("%s %s", r.Method, r.URL.Path)
-	s.mux.ServeHTTP(w, r)
+	observability.RequestIDMiddleware(observability.LogRequests(s.mux)).ServeHTTP(w, r)
 }
 
 func (s *Server) execute(w http.ResponseWriter, r *http.Request) {
@@ -65,25 +65,26 @@ func (s *Server) execute(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, service.ErrInvalidRequest):
 			writeError(w, http.StatusBadRequest, err.Error())
 		default:
-			log.Printf(
-				"CommandFailed sessionId=%s userId=%s hostId=%s crId=%s error=%v",
-				r.Header.Get("X-DDM-Session-ID"),
-				r.Header.Get("X-DDM-User-ID"),
-				r.Header.Get("X-DDM-Host-ID"),
-				r.Header.Get("X-DDM-CR-ID"),
-				err,
+			slog.WarnContext(r.Context(), "CommandFailed",
+				"requestId", observability.RequestID(r.Context()),
+				"sessionId", r.Header.Get("X-DDM-Session-ID"),
+				"userId", r.Header.Get("X-DDM-User-ID"),
+				"hostId", r.Header.Get("X-DDM-Host-ID"),
+				"crId", r.Header.Get("X-DDM-CR-ID"),
+				"error", err,
 			)
 			writeError(w, http.StatusInternalServerError, "command execution failed")
 		}
 		return
 	}
-	log.Printf(
-		"CommandExecuted sessionId=%s userId=%s hostId=%s crId=%s exitCode=%d",
-		r.Header.Get("X-DDM-Session-ID"),
-		r.Header.Get("X-DDM-User-ID"),
-		r.Header.Get("X-DDM-Host-ID"),
-		r.Header.Get("X-DDM-CR-ID"),
-		result.ExitCode,
+	slog.InfoContext(r.Context(), "CommandExecuted",
+		"requestId", observability.RequestID(r.Context()),
+		"sessionId", r.Header.Get("X-DDM-Session-ID"),
+		"userId", r.Header.Get("X-DDM-User-ID"),
+		"hostId", r.Header.Get("X-DDM-Host-ID"),
+		"crId", r.Header.Get("X-DDM-CR-ID"),
+		"status", "completed",
+		"exitCode", result.ExitCode,
 	)
 	writeJSON(w, http.StatusOK, result)
 }

@@ -2,18 +2,21 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/NUS-MTech-Capstone/ddm-agent/internal/config"
 	"github.com/NUS-MTech-Capstone/ddm-agent/internal/execution"
 	"github.com/NUS-MTech-Capstone/ddm-agent/internal/httpapi"
+	"github.com/NUS-MTech-Capstone/ddm-agent/internal/observability"
 	"github.com/NUS-MTech-Capstone/ddm-agent/internal/service"
 	"github.com/NUS-MTech-Capstone/ddm-agent/internal/sts"
 )
 
 func main() {
+	observability.ConfigureLogger("ddm-agent")
 	cfg := config.Load()
 	timeoutContext := func(ctx context.Context) (context.Context, context.CancelFunc) {
 		return context.WithTimeout(ctx, cfg.CommandTimeout)
@@ -31,6 +34,9 @@ func main() {
 		Handler:           httpapi.New(svc, cfg.MaxCommandBytes),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
-	log.Printf("ddm-agent listening on %s shell=%s", addr, cfg.Shell)
-	log.Fatal(server.ListenAndServe())
+	slog.Info("server_listening", "addr", addr, "shell", cfg.Shell)
+	if err := server.ListenAndServe(); err != nil {
+		slog.Error("server failed", "error", err)
+		os.Exit(1)
+	}
 }
