@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/NUS-MTech-Capstone/ddm-agent/api"
 	"github.com/NUS-MTech-Capstone/ddm-agent/internal/execution"
 	"github.com/NUS-MTech-Capstone/ddm-agent/internal/model"
 	"github.com/NUS-MTech-Capstone/ddm-agent/internal/observability"
@@ -32,6 +33,7 @@ func New(svc *service.Service, maxCommandBytes int) *Server {
 	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
+	s.mux.HandleFunc("GET /openapi.yaml", serveYAML(api.OpenAPI))
 	s.mux.HandleFunc("POST /execute", s.execute)
 	return s
 }
@@ -105,4 +107,12 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]any{"error": map[string]string{"message": message}})
+}
+
+func serveYAML(contents []byte) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(contents)
+	}
 }

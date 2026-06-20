@@ -107,6 +107,15 @@ Successful command execution, including a nonzero shell exit, returns:
 }
 ```
 
+## API Specification
+
+The OpenAPI contract is checked in at `api/openapi.yaml` and is served
+unauthenticated at:
+
+```http
+GET /openapi.yaml
+```
+
 ## Privileges
 
 Do not run the agent as root by default. A remote command execution service
