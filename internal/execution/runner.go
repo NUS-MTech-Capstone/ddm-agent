@@ -23,7 +23,7 @@ func NewRunner(shell string, maxOutputBytes int) *Runner {
 }
 
 func (r *Runner) Run(ctx context.Context, command string) (model.ExecuteResult, error) {
-	cmd := exec.CommandContext(ctx, r.shell, "-c", command)
+	cmd := exec.CommandContext(ctx, r.shell, "-c", command) // #nosec G204 -- command execution is the agent feature and is guarded by STS auth, size limits, timeout, and bounded output.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error {
 		if cmd.Process == nil {
