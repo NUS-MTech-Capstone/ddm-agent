@@ -3,6 +3,12 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish, for example v0.1.0"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -27,6 +33,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -66,8 +74,16 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum ddm-agent-linux-*.tar.gz > SHA256SUMS
+
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/ddm-agent-linux-*.tar.gz
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          files: |
+            dist/ddm-agent-linux-*.tar.gz
+            dist/SHA256SUMS
           generate_release_notes: true

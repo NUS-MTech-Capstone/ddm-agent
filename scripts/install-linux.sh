@@ -15,8 +15,12 @@ if [ "$(uname -s)" != "Linux" ]; then
   exit 1
 fi
 
-if ! command -v curl >/dev/null 2>&1; then
-  echo "curl is required." >&2
+if command -v curl >/dev/null 2>&1; then
+  DOWNLOADER="curl"
+elif command -v wget >/dev/null 2>&1; then
+  DOWNLOADER="wget"
+else
+  echo "curl or wget is required." >&2
   exit 1
 fi
 
@@ -57,6 +61,17 @@ fi
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
+download_file() {
+  url="$1"
+  out="$2"
+
+  if [ "$DOWNLOADER" = "curl" ]; then
+    curl -fsSL "$url" -o "$out"
+  else
+    wget -q -O "$out" "$url"
+  fi
+}
+
 download_asset() {
   for name in \
     "ddm-agent-linux-${ARCH}.tar.gz" \
@@ -70,7 +85,7 @@ download_asset() {
     "ddm-agent"; do
     url="${RELEASE_BASE}/${name}"
     out="${TMP_DIR}/${name}"
-    if curl -fsSL "$url" -o "$out"; then
+    if download_file "$url" "$out"; then
       echo "$out"
       return 0
     fi
@@ -82,7 +97,22 @@ download_asset() {
 }
 
 ASSET_PATH="$(download_asset)"
+ASSET_NAME="$(basename "$ASSET_PATH")"
 BINARY_PATH="${TMP_DIR}/ddm-agent"
+
+if download_file "${RELEASE_BASE}/SHA256SUMS" "${TMP_DIR}/SHA256SUMS"; then
+  if ! command -v sha256sum >/dev/null 2>&1; then
+    echo "SHA256SUMS is available, but sha256sum is not installed." >&2
+    exit 1
+  fi
+  if ! grep "  ${ASSET_NAME}$" "${TMP_DIR}/SHA256SUMS" > "${TMP_DIR}/SHA256SUMS.${ASSET_NAME}"; then
+    echo "SHA256SUMS does not contain ${ASSET_NAME}." >&2
+    exit 1
+  fi
+  (cd "$TMP_DIR" && sha256sum -c "SHA256SUMS.${ASSET_NAME}")
+else
+  echo "SHA256SUMS was not found for this release; continuing without checksum verification." >&2
+fi
 
 case "$ASSET_PATH" in
   *.tar.gz | *.tgz)

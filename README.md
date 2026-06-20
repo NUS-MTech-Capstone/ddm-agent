@@ -37,12 +37,37 @@ MAX_OUTPUT_BYTES=1048576
 `MAX_OUTPUT_BYTES` applies separately to stdout and stderr. Truncated output is
 marked in the response.
 
+## Release Distribution
+
+`ddm-agent` is installed on target hosts, not deployed to the Kubernetes
+cluster. The production distribution path is a GitHub Release containing static
+Linux binaries for `amd64` and `arm64`; Docker/ECR image publishing is not the
+supported deployment path for this service.
+
+To publish a release, create and push a version tag:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The release workflow runs Go CI, builds `ddm-agent-linux-amd64.tar.gz` and
+`ddm-agent-linux-arm64.tar.gz`, generates `SHA256SUMS`, and attaches those
+assets to the GitHub Release. The same workflow can be run manually for an
+existing `v*` tag.
+
 ## Linux Install
 
 Install the latest GitHub release as a systemd service:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/NUS-MTech-Capstone/ddm-agent/main/scripts/install-linux.sh | sudo sh
+```
+
+Hosts without `curl` can use `wget`:
+
+```bash
+wget -qO- https://raw.githubusercontent.com/NUS-MTech-Capstone/ddm-agent/main/scripts/install-linux.sh | sudo sh
 ```
 
 Optional overrides:
