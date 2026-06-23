@@ -1,8 +1,9 @@
 # DDM Agent
 
 Target-side service for the DenDenMushi MVP. It accepts command requests only
-from callers holding a short-lived STS session token, validates the token with
-STS, and executes the command as the operating-system user running the agent.
+from callers holding a short-lived STS session token or automation capability
+token, validates the token with STS, and executes the command as the
+operating-system user running the agent.
 
 The current protocol is line-oriented command execution, not a persistent PTY.
 Shell state such as `cd` and environment changes is not preserved between
@@ -118,9 +119,30 @@ X-DDM-CR-ID: cr-123
 {"command":"whoami"}
 ```
 
-The agent calls STS `POST /tokens/validate` with the session ID, user ID,
-required `owner` mode, and bearer token before execution. Observer tokens cannot
-run commands. Tokens and command contents are not logged.
+The agent calls STS `POST /tokens/validate` with the session ID, user ID, host,
+change request, required `owner` mode, `ssh` connection type, and bearer token
+before execution. Observer tokens cannot run commands. Tokens and command
+contents are not logged.
+
+Automation requests use an STS automation capability token and must include an
+operation name that is present in the signed token's allowed operation list:
+
+```http
+POST /execute
+Authorization: Bearer <short-lived-automation-token>
+Content-Type: application/json
+X-DDM-Run-ID: run-123
+X-DDM-Incident-ID: inc-123
+X-DDM-Host-ID: host-123
+
+{"operation":"health_check","command":"systemctl is-active myapp"}
+```
+
+For automation requests, the agent calls `POST /tokens/automation/validate`,
+checks the signed host and optional incident binding, and rejects operations not
+listed in the token. The command still runs as the dedicated agent service
+account; Cognito or workload identity is used for authorization and audit, not
+as a Linux username.
 
 Successful command execution, including a nonzero shell exit, returns:
 

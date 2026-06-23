@@ -14,10 +14,14 @@ import (
 	"github.com/NUS-MTech-Capstone/ddm-agent/internal/service"
 )
 
-type validatorFunc func(context.Context, string, string, string) error
+type validatorFunc func(context.Context, model.SessionTokenValidationRequest) (model.SessionClaims, error)
 
-func (f validatorFunc) ValidateToken(ctx context.Context, sessionID, userID, token string) error {
-	return f(ctx, sessionID, userID, token)
+func (f validatorFunc) ValidateSessionToken(ctx context.Context, req model.SessionTokenValidationRequest) (model.SessionClaims, error) {
+	return f(ctx, req)
+}
+
+func (f validatorFunc) ValidateAutomationToken(context.Context, string, string) (model.AutomationClaims, error) {
+	return model.AutomationClaims{}, errors.New("unexpected automation validation")
 }
 
 type runnerFunc func(context.Context, string) (model.ExecuteResult, error)
@@ -29,8 +33,8 @@ func (f runnerFunc) Run(ctx context.Context, command string) (model.ExecuteResul
 func TestExecuteRequiresSTSAuthorization(t *testing.T) {
 	runnerCalled := false
 	svc := testService(
-		validatorFunc(func(_ context.Context, _, _, _ string) error {
-			return errors.New("token expired")
+		validatorFunc(func(_ context.Context, _ model.SessionTokenValidationRequest) (model.SessionClaims, error) {
+			return model.SessionClaims{}, errors.New("token expired")
 		}),
 		runnerFunc(func(_ context.Context, _ string) (model.ExecuteResult, error) {
 			runnerCalled = true
@@ -52,11 +56,12 @@ func TestExecuteRequiresSTSAuthorization(t *testing.T) {
 
 func TestExecuteReturnsStructuredCommandResult(t *testing.T) {
 	svc := testService(
-		validatorFunc(func(_ context.Context, sessionID, userID, token string) error {
-			if sessionID != "sess-1" || userID != "user-1" || token != "token-1" {
-				t.Fatalf("STS validation got session %q user %q token %q", sessionID, userID, token)
+		validatorFunc(func(_ context.Context, req model.SessionTokenValidationRequest) (model.SessionClaims, error) {
+			if req.SessionID != "sess-1" || req.UserID != "user-1" || req.Token != "token-1" ||
+				req.HostID != "host-1" || req.CRID != "cr-1" || req.Mode != "owner" || req.ConnectionType != "ssh" {
+				t.Fatalf("STS validation got %#v", req)
 			}
-			return nil
+			return model.SessionClaims{SessionID: req.SessionID, UserID: req.UserID, HostID: req.HostID}, nil
 		}),
 		runnerFunc(func(_ context.Context, command string) (model.ExecuteResult, error) {
 			if command != "whoami" {

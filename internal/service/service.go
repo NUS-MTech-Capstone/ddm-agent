@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/NUS-MTech-Capstone/ddm-agent/internal/model"
@@ -14,7 +15,8 @@ var ErrInvalidRequest = errors.New("invalid execute request")
 var ErrExecution = errors.New("execute command")
 
 type TokenValidator interface {
-	ValidateToken(context.Context, string, string, string) error
+	ValidateSessionToken(context.Context, model.SessionTokenValidationRequest) (model.SessionClaims, error)
+	ValidateAutomationToken(context.Context, string, string) (model.AutomationClaims, error)
 }
 
 type CommandRunner interface {
@@ -40,8 +42,8 @@ func New(sts TokenValidator, runner CommandRunner, timeoutContext func(context.C
 }
 
 func (s *Service) Execute(ctx context.Context, req model.ExecuteRequest) (model.ExecuteResult, error) {
-	if req.SessionID == "" || req.UserID == "" || req.HostID == "" || req.CRID == "" {
-		return model.ExecuteResult{}, fmt.Errorf("%w: session, user, host, and change request metadata are required", ErrInvalidRequest)
+	if req.HostID == "" {
+		return model.ExecuteResult{}, fmt.Errorf("%w: host metadata is required", ErrInvalidRequest)
 	}
 	if req.Token == "" {
 		return model.ExecuteResult{}, ErrUnauthorized
@@ -55,8 +57,39 @@ func (s *Service) Execute(ctx context.Context, req model.ExecuteRequest) (model.
 	if len(req.Command) > s.maxCommandBytes {
 		return model.ExecuteResult{}, fmt.Errorf("%w: command exceeds %d bytes", ErrInvalidRequest, s.maxCommandBytes)
 	}
-	if err := s.sts.ValidateToken(ctx, req.SessionID, req.UserID, req.Token); err != nil {
-		return model.ExecuteResult{}, fmt.Errorf("%w: %v", ErrUnauthorized, err)
+
+	if req.RunID != "" {
+		claims, err := s.sts.ValidateAutomationToken(ctx, req.RunID, req.Token)
+		if err != nil {
+			return model.ExecuteResult{}, fmt.Errorf("%w: %v", ErrUnauthorized, err)
+		}
+		if claims.HostID != req.HostID {
+			return model.ExecuteResult{}, fmt.Errorf("%w: token host mismatch", ErrUnauthorized)
+		}
+		if req.IncidentID != "" && claims.IncidentID != req.IncidentID {
+			return model.ExecuteResult{}, fmt.Errorf("%w: token incident mismatch", ErrUnauthorized)
+		}
+		if strings.TrimSpace(req.Operation) == "" {
+			return model.ExecuteResult{}, fmt.Errorf("%w: operation is required for automation execution", ErrInvalidRequest)
+		}
+		if !slices.Contains(claims.AllowedOperations, req.Operation) {
+			return model.ExecuteResult{}, fmt.Errorf("%w: operation is not allowed", ErrUnauthorized)
+		}
+	} else {
+		if req.SessionID == "" || req.UserID == "" || req.CRID == "" {
+			return model.ExecuteResult{}, fmt.Errorf("%w: session, user, host, and change request metadata are required", ErrInvalidRequest)
+		}
+		if _, err := s.sts.ValidateSessionToken(ctx, model.SessionTokenValidationRequest{
+			SessionID:      req.SessionID,
+			UserID:         req.UserID,
+			HostID:         req.HostID,
+			CRID:           req.CRID,
+			ConnectionType: "ssh",
+			Mode:           "owner",
+			Token:          req.Token,
+		}); err != nil {
+			return model.ExecuteResult{}, fmt.Errorf("%w: %v", ErrUnauthorized, err)
+		}
 	}
 
 	commandCtx, cancel := s.commandTimeout(ctx)

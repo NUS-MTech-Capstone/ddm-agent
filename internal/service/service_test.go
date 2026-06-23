@@ -10,20 +10,42 @@ import (
 )
 
 type fakeValidator struct {
-	err     error
-	called  bool
-	session string
-	token   string
+	sessionErr       error
+	automationErr    error
+	sessionCalled    bool
+	automationCalled bool
+	session          string
+	token            string
+	automation       model.AutomationClaims
 }
 
-func (f *fakeValidator) ValidateToken(_ context.Context, sessionID, userID, token string) error {
-	f.called = true
-	f.session = sessionID
-	if userID != "user-1" {
-		return errors.New("unexpected user")
+func (f *fakeValidator) ValidateSessionToken(_ context.Context, req model.SessionTokenValidationRequest) (model.SessionClaims, error) {
+	f.sessionCalled = true
+	f.session = req.SessionID
+	if req.UserID != "user-1" {
+		return model.SessionClaims{}, errors.New("unexpected user")
 	}
+	if req.Mode != "owner" || req.ConnectionType != "ssh" {
+		return model.SessionClaims{}, errors.New("unexpected expected claims")
+	}
+	f.token = req.Token
+	return model.SessionClaims{SessionID: req.SessionID, UserID: req.UserID, HostID: req.HostID, CRID: req.CRID, ConnectionType: req.ConnectionType, Mode: req.Mode}, f.sessionErr
+}
+
+func (f *fakeValidator) ValidateAutomationToken(_ context.Context, runID, token string) (model.AutomationClaims, error) {
+	f.automationCalled = true
 	f.token = token
-	return f.err
+	if f.automationErr != nil {
+		return model.AutomationClaims{}, f.automationErr
+	}
+	claims := f.automation
+	if claims.RunID == "" {
+		claims.RunID = runID
+	}
+	if claims.HostID == "" {
+		claims.HostID = "host-1"
+	}
+	return claims, nil
 }
 
 type fakeRunner struct {
@@ -48,7 +70,7 @@ func TestExecuteValidatesTokenBeforeRunningCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !validator.called || validator.session != "sess-1" || validator.token != "token-1" {
+	if !validator.sessionCalled || validator.session != "sess-1" || validator.token != "token-1" {
 		t.Fatalf("validator call = session %q token %q", validator.session, validator.token)
 	}
 	if !runner.called || runner.command != "whoami" {
@@ -60,7 +82,7 @@ func TestExecuteValidatesTokenBeforeRunningCommand(t *testing.T) {
 }
 
 func TestExecuteDoesNotRunWhenSTSRejectsToken(t *testing.T) {
-	validator := &fakeValidator{err: errors.New("token expired")}
+	validator := &fakeValidator{sessionErr: errors.New("token expired")}
 	runner := &fakeRunner{}
 	svc := newTestService(validator, runner, "host-1")
 
@@ -82,8 +104,56 @@ func TestExecuteRejectsWrongAgentHost(t *testing.T) {
 	if !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("Execute() error = %v, want unauthorized", err)
 	}
-	if validator.called || runner.called {
+	if validator.sessionCalled || runner.called {
 		t.Fatal("host mismatch should be rejected before STS or command execution")
+	}
+}
+
+func TestExecuteRunsAllowedAutomationOperation(t *testing.T) {
+	validator := &fakeValidator{automation: model.AutomationClaims{
+		RunID: "run-1", IncidentID: "inc-1", HostID: "host-1", AllowedOperations: []string{"health_check"},
+	}}
+	runner := &fakeRunner{result: model.ExecuteResult{Stdout: "ok\n"}}
+	svc := newTestService(validator, runner, "host-1")
+
+	req := validRequest()
+	req.SessionID = ""
+	req.UserID = ""
+	req.CRID = ""
+	req.RunID = "run-1"
+	req.IncidentID = "inc-1"
+	req.Operation = "health_check"
+	result, err := svc.Execute(t.Context(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !validator.automationCalled || !runner.called {
+		t.Fatal("automation validation and command execution were not called")
+	}
+	if result.Stdout != "ok\n" {
+		t.Fatalf("stdout = %q", result.Stdout)
+	}
+}
+
+func TestExecuteRejectsAutomationOperationNotAllowedByToken(t *testing.T) {
+	validator := &fakeValidator{automation: model.AutomationClaims{
+		RunID: "run-1", HostID: "host-1", AllowedOperations: []string{"health_check"},
+	}}
+	runner := &fakeRunner{}
+	svc := newTestService(validator, runner, "host-1")
+
+	req := validRequest()
+	req.SessionID = ""
+	req.UserID = ""
+	req.CRID = ""
+	req.RunID = "run-1"
+	req.Operation = "restart_service"
+	_, err := svc.Execute(t.Context(), req)
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("Execute() error = %v, want unauthorized", err)
+	}
+	if runner.called {
+		t.Fatal("runner was called for a disallowed automation operation")
 	}
 }
 

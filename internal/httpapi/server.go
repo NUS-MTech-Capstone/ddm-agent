@@ -21,7 +21,8 @@ type Server struct {
 }
 
 type executeRequest struct {
-	Command string `json:"command"`
+	Command   string `json:"command"`
+	Operation string `json:"operation,omitempty"`
 }
 
 func New(svc *service.Service, maxCommandBytes int) *Server {
@@ -51,14 +52,29 @@ func (s *Server) execute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, err := s.svc.Execute(r.Context(), model.ExecuteRequest{
-		SessionID: r.Header.Get("X-DDM-Session-ID"),
-		UserID:    r.Header.Get("X-DDM-User-ID"),
-		HostID:    r.Header.Get("X-DDM-Host-ID"),
-		CRID:      r.Header.Get("X-DDM-CR-ID"),
-		Token:     bearerToken(r.Header.Get("Authorization")),
-		Command:   req.Command,
+		SessionID:  r.Header.Get("X-DDM-Session-ID"),
+		UserID:     r.Header.Get("X-DDM-User-ID"),
+		HostID:     r.Header.Get("X-DDM-Host-ID"),
+		CRID:       r.Header.Get("X-DDM-CR-ID"),
+		RunID:      r.Header.Get("X-DDM-Run-ID"),
+		IncidentID: r.Header.Get("X-DDM-Incident-ID"),
+		Operation:  req.Operation,
+		Token:      bearerToken(r.Header.Get("Authorization")),
+		Command:    req.Command,
 	})
 	if err != nil {
+		slog.WarnContext(r.Context(), "CommandRejected",
+			"requestId", observability.RequestID(r.Context()),
+			"sessionId", r.Header.Get("X-DDM-Session-ID"),
+			"userId", r.Header.Get("X-DDM-User-ID"),
+			"hostId", r.Header.Get("X-DDM-Host-ID"),
+			"crId", r.Header.Get("X-DDM-CR-ID"),
+			"runId", r.Header.Get("X-DDM-Run-ID"),
+			"incidentId", r.Header.Get("X-DDM-Incident-ID"),
+			"operation", req.Operation,
+			"status", "rejected",
+			"error", err,
+		)
 		switch {
 		case errors.Is(err, service.ErrUnauthorized):
 			writeError(w, http.StatusForbidden, "session is not authorized")
@@ -85,6 +101,9 @@ func (s *Server) execute(w http.ResponseWriter, r *http.Request) {
 		"userId", r.Header.Get("X-DDM-User-ID"),
 		"hostId", r.Header.Get("X-DDM-Host-ID"),
 		"crId", r.Header.Get("X-DDM-CR-ID"),
+		"runId", r.Header.Get("X-DDM-Run-ID"),
+		"incidentId", r.Header.Get("X-DDM-Incident-ID"),
+		"operation", req.Operation,
 		"status", "completed",
 		"exitCode", result.ExitCode,
 	)

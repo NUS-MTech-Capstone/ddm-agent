@@ -26,6 +26,8 @@ paths:
         - $ref: "#/components/parameters/UserIdHeader"
         - $ref: "#/components/parameters/HostIdHeader"
         - $ref: "#/components/parameters/CrIdHeader"
+        - $ref: "#/components/parameters/RunIdHeader"
+        - $ref: "#/components/parameters/IncidentIdHeader"
       requestBody:
         required: true
         content:
@@ -54,13 +56,15 @@ components:
     SessionIdHeader:
       name: X-DDM-Session-ID
       in: header
-      required: true
+      required: false
+      description: Required for session-token execution.
       schema:
         type: string
     UserIdHeader:
       name: X-DDM-User-ID
       in: header
-      required: true
+      required: false
+      description: Required for session-token execution.
       schema:
         type: string
     HostIdHeader:
@@ -72,7 +76,21 @@ components:
     CrIdHeader:
       name: X-DDM-CR-ID
       in: header
-      required: true
+      required: false
+      schema:
+        type: string
+    RunIdHeader:
+      name: X-DDM-Run-ID
+      in: header
+      required: false
+      description: Required for automation capability-token execution.
+      schema:
+        type: string
+    IncidentIdHeader:
+      name: X-DDM-Incident-ID
+      in: header
+      required: false
+      description: Optional automation incident binding checked against signed STS claims when present.
       schema:
         type: string
   responses:
@@ -107,6 +125,9 @@ components:
         command:
           type: string
           description: Command string to execute. The service bounds request size and execution time.
+        operation:
+          type: string
+          description: Required for automation execution and checked against the signed allowed operation list.
     ExecuteResult:
       type: object
       required: [stdout, stderr, exitCode]
