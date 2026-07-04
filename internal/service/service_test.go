@@ -157,6 +157,20 @@ func TestExecuteRejectsAutomationOperationNotAllowedByToken(t *testing.T) {
 	}
 }
 
+func TestSelectAuthorizationStrategyUsesAutomationWhenRunIDPresent(t *testing.T) {
+	strategy := selectAuthorizationStrategy(model.ExecuteRequest{RunID: "run-1"})
+	if _, ok := strategy.(AutomationAuthorizationStrategy); !ok {
+		t.Fatalf("strategy = %T, want AutomationAuthorizationStrategy", strategy)
+	}
+}
+
+func TestSelectAuthorizationStrategyDefaultsToSession(t *testing.T) {
+	strategy := selectAuthorizationStrategy(model.ExecuteRequest{SessionID: "sess-1"})
+	if _, ok := strategy.(SessionAuthorizationStrategy); !ok {
+		t.Fatalf("strategy = %T, want SessionAuthorizationStrategy", strategy)
+	}
+}
+
 func newTestService(validator TokenValidator, runner CommandRunner, hostID string) *Service {
 	return New(
 		validator,

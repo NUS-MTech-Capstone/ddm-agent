@@ -1,13 +1,17 @@
 # DDM Agent
 
-Target-side service for the DenDenMushi MVP. It accepts command requests only
-from callers holding a short-lived STS session token or automation capability
-token, validates the token with STS, and executes the command as the
-operating-system user running the agent.
+Target-side service for bounded DenDenMushi command execution. It accepts
+requests only from callers holding a short-lived STS session token or
+automation capability token, validates the token with STS, and executes the
+command as the operating-system user running the agent.
 
 The current protocol is line-oriented command execution, not a persistent PTY.
 Shell state such as `cd` and environment changes is not preserved between
 requests.
+
+For Phase 2, this agent is an automation target for allowlisted diagnostics and
+approved remediation. It is not the live terminal transport, does not preserve a
+streaming shell, and must not execute model-generated free-form commands.
 
 ## Run
 
@@ -37,6 +41,15 @@ MAX_OUTPUT_BYTES=1048576
 
 `MAX_OUTPUT_BYTES` applies separately to stdout and stderr. Truncated output is
 marked in the response.
+
+## Design Patterns
+
+DDM Agent uses an authorization Strategy before command execution.
+`SessionAuthorizationStrategy` validates interactive owner requests, while
+`AutomationAuthorizationStrategy` validates run-scoped automation capability
+tokens and operation allowlists. Command execution remains behind the
+`CommandRunner` interface so authorization and execution can be tested
+independently.
 
 ## Release Distribution
 

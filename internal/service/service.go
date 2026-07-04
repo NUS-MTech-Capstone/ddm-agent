@@ -23,6 +23,52 @@ type CommandRunner interface {
 	Run(context.Context, string) (model.ExecuteResult, error)
 }
 
+type AuthorizationStrategy interface {
+	Authorize(context.Context, TokenValidator, model.ExecuteRequest) error
+}
+
+type SessionAuthorizationStrategy struct{}
+
+func (SessionAuthorizationStrategy) Authorize(ctx context.Context, sts TokenValidator, req model.ExecuteRequest) error {
+	if req.SessionID == "" || req.UserID == "" || req.CRID == "" {
+		return fmt.Errorf("%w: session, user, host, and change request metadata are required", ErrInvalidRequest)
+	}
+	if _, err := sts.ValidateSessionToken(ctx, model.SessionTokenValidationRequest{
+		SessionID:      req.SessionID,
+		UserID:         req.UserID,
+		HostID:         req.HostID,
+		CRID:           req.CRID,
+		ConnectionType: "ssh",
+		Mode:           "owner",
+		Token:          req.Token,
+	}); err != nil {
+		return fmt.Errorf("%w: %v", ErrUnauthorized, err)
+	}
+	return nil
+}
+
+type AutomationAuthorizationStrategy struct{}
+
+func (AutomationAuthorizationStrategy) Authorize(ctx context.Context, sts TokenValidator, req model.ExecuteRequest) error {
+	claims, err := sts.ValidateAutomationToken(ctx, req.RunID, req.Token)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrUnauthorized, err)
+	}
+	if claims.HostID != req.HostID {
+		return fmt.Errorf("%w: token host mismatch", ErrUnauthorized)
+	}
+	if req.IncidentID != "" && claims.IncidentID != req.IncidentID {
+		return fmt.Errorf("%w: token incident mismatch", ErrUnauthorized)
+	}
+	if strings.TrimSpace(req.Operation) == "" {
+		return fmt.Errorf("%w: operation is required for automation execution", ErrInvalidRequest)
+	}
+	if !slices.Contains(claims.AllowedOperations, req.Operation) {
+		return fmt.Errorf("%w: operation is not allowed", ErrUnauthorized)
+	}
+	return nil
+}
+
 type Service struct {
 	sts             TokenValidator
 	runner          CommandRunner
@@ -58,38 +104,8 @@ func (s *Service) Execute(ctx context.Context, req model.ExecuteRequest) (model.
 		return model.ExecuteResult{}, fmt.Errorf("%w: command exceeds %d bytes", ErrInvalidRequest, s.maxCommandBytes)
 	}
 
-	if req.RunID != "" {
-		claims, err := s.sts.ValidateAutomationToken(ctx, req.RunID, req.Token)
-		if err != nil {
-			return model.ExecuteResult{}, fmt.Errorf("%w: %v", ErrUnauthorized, err)
-		}
-		if claims.HostID != req.HostID {
-			return model.ExecuteResult{}, fmt.Errorf("%w: token host mismatch", ErrUnauthorized)
-		}
-		if req.IncidentID != "" && claims.IncidentID != req.IncidentID {
-			return model.ExecuteResult{}, fmt.Errorf("%w: token incident mismatch", ErrUnauthorized)
-		}
-		if strings.TrimSpace(req.Operation) == "" {
-			return model.ExecuteResult{}, fmt.Errorf("%w: operation is required for automation execution", ErrInvalidRequest)
-		}
-		if !slices.Contains(claims.AllowedOperations, req.Operation) {
-			return model.ExecuteResult{}, fmt.Errorf("%w: operation is not allowed", ErrUnauthorized)
-		}
-	} else {
-		if req.SessionID == "" || req.UserID == "" || req.CRID == "" {
-			return model.ExecuteResult{}, fmt.Errorf("%w: session, user, host, and change request metadata are required", ErrInvalidRequest)
-		}
-		if _, err := s.sts.ValidateSessionToken(ctx, model.SessionTokenValidationRequest{
-			SessionID:      req.SessionID,
-			UserID:         req.UserID,
-			HostID:         req.HostID,
-			CRID:           req.CRID,
-			ConnectionType: "ssh",
-			Mode:           "owner",
-			Token:          req.Token,
-		}); err != nil {
-			return model.ExecuteResult{}, fmt.Errorf("%w: %v", ErrUnauthorized, err)
-		}
+	if err := selectAuthorizationStrategy(req).Authorize(ctx, s.sts, req); err != nil {
+		return model.ExecuteResult{}, err
 	}
 
 	commandCtx, cancel := s.commandTimeout(ctx)
@@ -99,4 +115,11 @@ func (s *Service) Execute(ctx context.Context, req model.ExecuteRequest) (model.
 		return model.ExecuteResult{}, fmt.Errorf("%w: %w", ErrExecution, err)
 	}
 	return result, nil
+}
+
+func selectAuthorizationStrategy(req model.ExecuteRequest) AuthorizationStrategy {
+	if req.RunID != "" {
+		return AutomationAuthorizationStrategy{}
+	}
+	return SessionAuthorizationStrategy{}
 }
