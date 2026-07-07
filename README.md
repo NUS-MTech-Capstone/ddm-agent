@@ -118,6 +118,10 @@ GET  /healthz
 POST /execute
 ```
 
+Business endpoints require `x-api-version: 1`. `GET /healthz` and
+`GET /openapi.yaml` are exempt so probes and spec reads do not need custom
+headers.
+
 Example authenticated request:
 
 ```http

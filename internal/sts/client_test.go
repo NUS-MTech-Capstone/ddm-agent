@@ -23,6 +23,9 @@ func TestValidateSessionToken(t *testing.T) {
 		if r.Method != http.MethodPost || r.URL.Path != "/tokens/validate" {
 			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
 		}
+		if r.Header.Get("x-api-version") != "1" {
+			t.Fatalf("api version = %q", r.Header.Get("x-api-version"))
+		}
 		var body map[string]string
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatal(err)
@@ -69,6 +72,9 @@ func TestValidateAutomationToken(t *testing.T) {
 	client.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if r.Method != http.MethodPost || r.URL.Path != "/tokens/automation/validate" {
 			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
+		}
+		if r.Header.Get("x-api-version") != "1" {
+			t.Fatalf("api version = %q", r.Header.Get("x-api-version"))
 		}
 		var body map[string]string
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {

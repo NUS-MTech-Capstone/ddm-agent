@@ -181,6 +181,7 @@ func newExecuteHTTPRequest(body, token string) *http.Request {
 	request := httptest.NewRequest(http.MethodPost, "/execute", bytes.NewBufferString(body))
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set(apiVersionHeader, supportedAPIVersion)
 	request.Header.Set("X-DDM-Session-ID", "sess-1")
 	request.Header.Set("X-DDM-User-ID", "user-1")
 	request.Header.Set("X-DDM-Host-ID", "host-1")

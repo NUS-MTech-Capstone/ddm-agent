@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: DenDenMushi DDM Agent API
   version: 0.1.0
-  description: Target-side bounded command execution API.
+  description: Target-side bounded command execution API. Business endpoints require the `x-api-version: 1` header; probe and OpenAPI endpoints are exempt.
 servers:
   - url: http://localhost:8084
 paths:

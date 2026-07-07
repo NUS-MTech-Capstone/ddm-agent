@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/NUS-MTech-Capstone/ddm-agent/internal/model"
+	"github.com/NUS-MTech-Capstone/ddm-agent/internal/observability"
 )
 
 const maxResponseBytes = 64 * 1024
@@ -59,6 +60,7 @@ func (c *Client) ValidateSessionToken(ctx context.Context, validation model.Sess
 		return model.SessionClaims{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	observability.SetRequestHeaders(ctx, req)
 
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -95,6 +97,7 @@ func (c *Client) ValidateAutomationToken(ctx context.Context, runID, token strin
 		return model.AutomationClaims{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	observability.SetRequestHeaders(ctx, req)
 
 	resp, err := c.client.Do(req)
 	if err != nil {
