@@ -157,11 +157,105 @@ func TestExecuteRejectsAutomationOperationNotAllowedByToken(t *testing.T) {
 	}
 }
 
+func TestExecuteRejectsInvalidRequestsBeforeAuthorization(t *testing.T) {
+	tests := []struct {
+		name string
+		req  model.ExecuteRequest
+	}{
+		{name: "missing host", req: model.ExecuteRequest{Token: "token", Command: "whoami"}},
+		{name: "missing token", req: model.ExecuteRequest{HostID: "host-1", Command: "whoami"}},
+		{name: "empty command", req: model.ExecuteRequest{HostID: "host-1", Token: "token", Command: "  "}},
+		{name: "oversized command", req: model.ExecuteRequest{HostID: "host-1", Token: "token", Command: "too-long"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			validator := &fakeValidator{}
+			runner := &fakeRunner{}
+			svc := New(validator, runner, func(ctx context.Context) (context.Context, context.CancelFunc) {
+				return context.WithTimeout(ctx, time.Second)
+			}, len("short"), "")
+
+			_, err := svc.Execute(t.Context(), tt.req)
+			if err == nil {
+				t.Fatal("Execute() error = nil")
+			}
+			if validator.sessionCalled || validator.automationCalled || runner.called {
+				t.Fatalf("validator=%v/%v runner=%v", validator.sessionCalled, validator.automationCalled, runner.called)
+			}
+		})
+	}
+}
+
+func TestExecuteWrapsRunnerFailure(t *testing.T) {
+	validator := &fakeValidator{}
+	runnerErr := errors.New("boom")
+	runner := &fakeRunner{err: runnerErr}
+	svc := newTestService(validator, runner, "host-1")
+
+	_, err := svc.Execute(t.Context(), validRequest())
+	if !errors.Is(err, ErrExecution) || !errors.Is(err, runnerErr) {
+		t.Fatalf("Execute() error = %v, want ErrExecution wrapping runner error", err)
+	}
+}
+
+func TestAutomationAuthorizationRejectsHostIncidentAndMissingOperation(t *testing.T) {
+	tests := []struct {
+		name   string
+		claims model.AutomationClaims
+		req    model.ExecuteRequest
+		want   error
+	}{
+		{
+			name:   "host mismatch",
+			claims: model.AutomationClaims{RunID: "run-1", HostID: "other-host", AllowedOperations: []string{"health_check"}},
+			req:    automationRequest("health_check", "inc-1"),
+			want:   ErrUnauthorized,
+		},
+		{
+			name:   "incident mismatch",
+			claims: model.AutomationClaims{RunID: "run-1", HostID: "host-1", IncidentID: "other-inc", AllowedOperations: []string{"health_check"}},
+			req:    automationRequest("health_check", "inc-1"),
+			want:   ErrUnauthorized,
+		},
+		{
+			name:   "missing operation",
+			claims: model.AutomationClaims{RunID: "run-1", HostID: "host-1", IncidentID: "inc-1", AllowedOperations: []string{"health_check"}},
+			req:    automationRequest(" ", "inc-1"),
+			want:   ErrInvalidRequest,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			validator := &fakeValidator{automation: tt.claims}
+			runner := &fakeRunner{}
+			svc := newTestService(validator, runner, "")
+			_, err := svc.Execute(t.Context(), tt.req)
+			if !errors.Is(err, tt.want) {
+				t.Fatalf("Execute() error = %v, want %v", err, tt.want)
+			}
+			if runner.called {
+				t.Fatal("runner called for rejected automation request")
+			}
+		})
+	}
+}
+
 func TestSelectAuthorizationStrategyUsesAutomationWhenRunIDPresent(t *testing.T) {
 	strategy := selectAuthorizationStrategy(model.ExecuteRequest{RunID: "run-1"})
 	if _, ok := strategy.(AutomationAuthorizationStrategy); !ok {
 		t.Fatalf("strategy = %T, want AutomationAuthorizationStrategy", strategy)
 	}
+}
+
+func automationRequest(operation, incidentID string) model.ExecuteRequest {
+	req := validRequest()
+	req.SessionID = ""
+	req.UserID = ""
+	req.CRID = ""
+	req.RunID = "run-1"
+	req.IncidentID = incidentID
+	req.Operation = operation
+	return req
 }
 
 func TestSelectAuthorizationStrategyDefaultsToSession(t *testing.T) {

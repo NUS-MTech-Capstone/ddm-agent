@@ -98,3 +98,24 @@ func TestValidateAutomationToken(t *testing.T) {
 		t.Fatalf("claims = %#v", claims)
 	}
 }
+
+func TestValidateAutomationTokenRejectsMissingClaimsAndTransportFailure(t *testing.T) {
+	client := New("http://sts.example", time.Second)
+	client.client.Transport = roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"allowed":true}`)),
+		}, nil
+	})
+	if _, err := client.ValidateAutomationToken(t.Context(), "run-1", "token-1"); err == nil {
+		t.Fatal("ValidateAutomationToken() accepted response without claims")
+	}
+
+	client.client.Transport = roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+		return nil, io.ErrUnexpectedEOF
+	})
+	if _, err := client.ValidateAutomationToken(t.Context(), "run-1", "token-1"); err == nil {
+		t.Fatal("ValidateAutomationToken() accepted transport failure")
+	}
+}
