@@ -1,3 +1,3 @@
 module github.com/NUS-MTech-Capstone/ddm-agent
 
-go 1.26.4
+go 1.26.5
