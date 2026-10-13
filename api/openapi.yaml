@@ -2,51 +2,68 @@ openapi: 3.1.0
 info:
   title: DenDenMushi DDM Agent API
   version: 0.1.0
-  description: Target-side bounded command execution API. Business endpoints require the `x-api-version: 1` header; probe and OpenAPI endpoints are exempt.
+  description: 'Target-side bounded command execution API. Business endpoints require the `x-api-version: 1` header;
+    probe and OpenAPI endpoints are exempt.'
 servers:
-  - url: http://localhost:8084
+- url: http://localhost:8084
+  description: Direct service address; public services are accessed through the authenticated ALB.
 paths:
   /healthz:
     get:
       summary: Liveness probe
       responses:
-        "200":
-          description: Agent is running.
+        '200':
+          description: Successful response.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/HealthResponse"
+                $ref: '#/components/schemas/HealthResponse'
+      security: []
   /execute:
     post:
       summary: Execute a bounded command for an authorized session
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       parameters:
-        - $ref: "#/components/parameters/SessionIdHeader"
-        - $ref: "#/components/parameters/UserIdHeader"
-        - $ref: "#/components/parameters/HostIdHeader"
-        - $ref: "#/components/parameters/CrIdHeader"
-        - $ref: "#/components/parameters/RunIdHeader"
-        - $ref: "#/components/parameters/IncidentIdHeader"
+      - $ref: '#/components/parameters/SessionIdHeader'
+      - $ref: '#/components/parameters/UserIdHeader'
+      - $ref: '#/components/parameters/HostIdHeader'
+      - $ref: '#/components/parameters/CrIdHeader'
+      - $ref: '#/components/parameters/RunIdHeader'
+      - $ref: '#/components/parameters/IncidentIdHeader'
+      - $ref: '#/components/parameters/APIVersion'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ExecuteRequest"
+              $ref: '#/components/schemas/ExecuteRequest'
       responses:
-        "200":
+        '200':
           description: Command completed.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ExecuteResult"
-        "400":
-          $ref: "#/components/responses/Error"
-        "403":
-          $ref: "#/components/responses/Error"
-        "504":
-          $ref: "#/components/responses/Error"
+                $ref: '#/components/schemas/ExecuteResult'
+        '400':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '504':
+          $ref: '#/components/responses/Error'
+        '500':
+          $ref: '#/components/responses/Error'
+  /openapi.yaml:
+    get:
+      summary: Checked-in OpenAPI specification
+      responses:
+        '200':
+          description: Exact api/openapi.yaml bytes.
+          content:
+            application/yaml:
+              schema:
+                type: string
+      security: []
 components:
   securitySchemes:
     bearerAuth:
@@ -93,34 +110,46 @@ components:
       description: Optional automation incident binding checked against signed STS claims when present.
       schema:
         type: string
+    APIVersion:
+      name: x-api-version
+      in: header
+      required: true
+      schema:
+        type: string
+        enum:
+        - '1'
+      description: Required on business endpoints. Missing or unsupported values return 400.
   responses:
     Error:
-      description: Structured error response.
+      description: Invalid request, authorization denial, or service failure; the HTTP status identifies the category.
       content:
         application/json:
           schema:
-            $ref: "#/components/schemas/ErrorResponse"
+            $ref: '#/components/schemas/ErrorResponse'
   schemas:
     HealthResponse:
       type: object
-      required: [status]
       properties:
         status:
           type: string
-          example: ok
+      required:
+      - status
     ErrorResponse:
       type: object
-      required: [error]
       properties:
         error:
           type: object
-          required: [message]
           properties:
             message:
               type: string
+          required:
+          - message
+      required:
+      - error
     ExecuteRequest:
       type: object
-      required: [command]
+      required:
+      - command
       properties:
         command:
           type: string
@@ -130,7 +159,10 @@ components:
           description: Required for automation execution and checked against the signed allowed operation list.
     ExecuteResult:
       type: object
-      required: [stdout, stderr, exitCode]
+      required:
+      - stdout
+      - stderr
+      - exitCode
       properties:
         stdout:
           type: string

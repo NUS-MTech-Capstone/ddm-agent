@@ -192,3 +192,13 @@ Run it as a dedicated least-privileged account. If a small set of administrative
 operations is required, expose tightly scoped root-owned helper programs or
 specific `sudoers` entries rather than granting the whole agent unrestricted
 root access.
+
+## API contract verification
+
+`api/openapi.yaml` is the checked-in HTTP contract, served byte-for-byte at
+`GET /openapi.yaml`. CI validates it with `openapi-spec-validator==0.9.0`.
+Handler tests validate representative success and error responses against its
+schemas, including missing and unsupported API versions. Business HTTP calls
+require `x-api-version: 1`; the specification declares route exemptions and
+any transport-specific alternatives. Run the repository test suite when
+changing handlers or response models, and update the contract in the same PR.
