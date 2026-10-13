@@ -46,6 +46,7 @@ func TestExecuteRequiresSTSAuthorization(t *testing.T) {
 
 	response := httptest.NewRecorder()
 	server.ServeHTTP(response, newExecuteHTTPRequest(`{"command":"whoami"}`, "token-1"))
+	assertContractResponse(t, "POST", "/execute", response)
 
 	if response.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusForbidden)
@@ -75,6 +76,7 @@ func TestExecuteReturnsStructuredCommandResult(t *testing.T) {
 
 	response := httptest.NewRecorder()
 	server.ServeHTTP(response, newExecuteHTTPRequest(`{"command":"whoami"}`, "token-1"))
+	assertContractResponse(t, "POST", "/execute", response)
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d body = %s", response.Code, response.Body.String())
