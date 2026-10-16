@@ -5,13 +5,9 @@ requests only from callers holding a short-lived STS session token or
 automation capability token, validates the token with STS, and executes the
 command as the operating-system user running the agent.
 
-The current protocol is line-oriented command execution, not a persistent PTY.
-Shell state such as `cd` and environment changes is not preserved between
-requests.
-
-For Phase 2, this agent is an automation target for allowlisted diagnostics and
-approved remediation. It is not the live terminal transport, does not preserve a
-streaming shell, and must not execute model-generated free-form commands.
+Each request runs a bounded command in a separate shell. Interactive persistent
+PTY sessions are owned by Proxy Dataplane. Automation requests require an
+allowlisted operation and an STS capability for that operation.
 
 ## Run
 
@@ -53,10 +49,8 @@ independently.
 
 ## Release Distribution
 
-`ddm-agent` is installed on target hosts, not deployed to the Kubernetes
-cluster. The production distribution path is a GitHub Release containing static
-Linux binaries for `amd64` and `arm64`; Docker/ECR image publishing is not the
-supported deployment path for this service.
+Install DDM Agent on target hosts using GitHub Release binaries for Linux
+`amd64` and `arm64`. The release includes checksums and a systemd installer.
 
 To publish a release, create and push a version tag:
 
@@ -130,6 +124,7 @@ Example authenticated request:
 POST /execute
 Authorization: Bearer <short-lived-session-token>
 Content-Type: application/json
+x-api-version: 1
 X-DDM-Session-ID: sess-123
 X-DDM-User-ID: user-123
 X-DDM-Host-ID: host-123
@@ -150,6 +145,7 @@ operation name that is present in the signed token's allowed operation list:
 POST /execute
 Authorization: Bearer <short-lived-automation-token>
 Content-Type: application/json
+x-api-version: 1
 X-DDM-Run-ID: run-123
 X-DDM-Incident-ID: inc-123
 X-DDM-Host-ID: host-123
@@ -173,32 +169,14 @@ Successful command execution, including a nonzero shell exit, returns:
 }
 ```
 
-## API Specification
-
-The OpenAPI contract is checked in at `api/openapi.yaml` and is served
-unauthenticated at:
-
-```http
-GET /openapi.yaml
-```
-
 ## Privileges
 
-Do not run the agent as root by default. A remote command execution service
-running as root turns any authentication or command-handling defect into full
-host compromise.
+The installer runs the service as the dedicated `ddm-agent` account with
+`NoNewPrivileges=true` and Linux capabilities removed. Administrative operations
+use narrowly scoped root-owned helpers or specific `sudoers` entries.
 
-Run it as a dedicated least-privileged account. If a small set of administrative
-operations is required, expose tightly scoped root-owned helper programs or
-specific `sudoers` entries rather than granting the whole agent unrestricted
-root access.
+## API contract and CI
 
-## API contract verification
-
-`api/openapi.yaml` is the checked-in HTTP contract, served byte-for-byte at
-`GET /openapi.yaml`. CI validates it with `openapi-spec-validator==0.9.0`.
-Handler tests validate representative success and error responses against its
-schemas, including missing and unsupported API versions. Business HTTP calls
-require `x-api-version: 1`; the specification declares route exemptions and
-any transport-specific alternatives. Run the repository test suite when
-changing handlers or response models, and update the contract in the same PR.
+[OpenAPI contract](api/openapi.yaml), served byte-for-byte at `GET /openapi.yaml`.
+CI validates it with `openapi-spec-validator==0.9.0`; handler tests check success,
+error and API-version responses. Update the specification alongside handler changes.
